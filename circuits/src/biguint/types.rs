@@ -60,7 +60,8 @@ pub(crate) const LOG2_BASE: u32 = 96;
 #[derive(Clone, Debug)]
 #[must_use]
 pub struct AssignedBigUint<F: PrimeField> {
-    pub(crate) limbs: Vec<AssignedNative<F>>,
+    /// limbs
+    pub limbs: Vec<AssignedNative<F>>,
     pub(crate) limb_size_bounds: Vec<u32>,
 }
 
