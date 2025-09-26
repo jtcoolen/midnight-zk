@@ -49,6 +49,7 @@ use midnight_proofs::{
 use num_bigint::BigUint;
 use rand::{CryptoRng, RngCore};
 
+use crate::verifier::{self, AssignedAccumulator, AssignedVk, VerifierGadget};
 use crate::{
     biguint::biguint_gadget::BigUintGadget,
     ecc::{
@@ -94,6 +95,7 @@ use crate::{
     utils::{BlstPLONK, ComposableChip},
     vec::{vector_gadget::VectorGadget, AssignedVector, Vectorizable},
 };
+use midnight_proofs::poly::EvaluationDomain;
 
 const SHA256_SIZE_IN_WORDS: usize = 8;
 const SHA256_SIZE_IN_BYTES: usize = 4 * SHA256_SIZE_IN_WORDS;
@@ -108,6 +110,15 @@ type Secp256k1ScalarChip = FieldChip<F, secp256k1::Fq, MEP, NG>;
 type Secp256k1Chip = ForeignEccChip<F, Secp256k1, MEP, Secp256k1ScalarChip, NG>;
 type Bls12381BaseChip = FieldChip<F, midnight_curves::Fp, MEP, NG>;
 type Bls12381Chip = ForeignEccChip<F, midnight_curves::G1Projective, MEP, NG, NG>;
+
+type Bls12381BaseChipSelf = FieldChip<F, midnight_curves::Fp, midnight_curves::G1Projective, NG>;
+type Bls12381ChipSelf =
+    ForeignEccChip<F, midnight_curves::G1Projective, midnight_curves::G1Projective, NG, NG>;
+
+type VS = crate::verifier::BlstrsEmulation;
+type VG = VerifierGadget<VS>;
+type VAcc = AssignedAccumulator<VS>;
+type VKAss = AssignedVk<VS>;
 
 /// Size of the lookup table for SHA.
 #[derive(Clone, Copy, Debug, Encode, Decode)]
@@ -150,6 +161,9 @@ pub struct ZkStdLibArch {
 
     /// Enable automaton?
     pub automaton: bool,
+
+    /// Enable in-circuit KZG-based PLONK partial verifier.
+    pub verifier: bool,
 }
 
 impl Default for ZkStdLibArch {
@@ -163,6 +177,7 @@ impl Default for ZkStdLibArch {
             base64: false,
             nr_pow2range_cols: 1,
             automaton: false,
+            verifier: false,
         }
     }
 }
@@ -205,6 +220,7 @@ pub struct ZkStdLibConfig {
     secp256k1_scalar_config: Option<FieldChipConfig>,
     secp256k1_config: Option<ForeignEccConfig<Secp256k1>>,
     bls12_381_config: Option<ForeignEccConfig<midnight_curves::G1Projective>>,
+    bls12_381_self_config: Option<ForeignEccConfig<midnight_curves::G1Projective>>,
     base64_config: Option<Base64Config>,
     automaton_config: Option<AutomatonConfig<StdLibParser, midnight_curves::Fq>>,
 }
@@ -233,6 +249,9 @@ pub struct ZkStdLib {
     // A flag that indicates if the SHA chip has been used. This way we can load the SHA table only
     // when necessary (thus reducing the min_k in some cases).
     used_sha: Rc<RefCell<bool>>,
+
+    bls12_381_curve_chip_v: Option<Bls12381ChipSelf>,
+    verifier_gadget: Option<VG>,
 }
 
 impl ZkStdLib {
@@ -275,6 +294,20 @@ impl ZkStdLib {
         let automaton_chip =
             (config.automaton_config.as_ref()).map(|c| AutomatonChip::new(c, &native_gadget));
 
+        let bls12_381_curve_chip_v = (config.bls12_381_self_config.as_ref()).map(|curve_config| {
+            Bls12381ChipSelf::new(curve_config, &native_gadget, &native_gadget)
+        });
+
+        let verifier_gadget = (bls12_381_curve_chip_v.as_ref())
+            .zip(poseidon_gadget.as_ref())
+            .map(|(curve_chip_v, poseidon)| {
+                VerifierGadget::<crate::verifier::BlstrsEmulation>::new(
+                    curve_chip_v,
+                    &native_gadget,
+                    poseidon,
+                )
+            });
+
         Self {
             native_gadget,
             core_decomposition_chip,
@@ -293,6 +326,8 @@ impl ZkStdLib {
             vector_gadget,
             automaton_chip,
             used_sha: Rc::new(RefCell::new(false)),
+            bls12_381_curve_chip_v,
+            verifier_gadget,
         }
     }
 
@@ -339,6 +374,17 @@ impl ZkStdLib {
                 0
             },
             NB_AUTOMATA_COLS,
+            if arch.verifier {
+                // mirrors the <GADGETS> example: nb_foreign_ecc_chip_columns::<F, C, C, NG>()
+                nb_foreign_ecc_chip_columns::<
+                    F,
+                    midnight_curves::G1Projective,
+                    midnight_curves::G1Projective,
+                    NG,
+                >()
+            } else {
+                0
+            },
         ]
         .into_iter()
         .max()
@@ -445,6 +491,18 @@ impl ZkStdLib {
             false => None,
         };
 
+        let bls12_381_self_config = match arch.verifier {
+            true => {
+                let base_cfg_self = Bls12381BaseChipSelf::configure(meta, &advice_columns);
+                Some(Bls12381ChipSelf::configure(
+                    meta,
+                    &base_cfg_self,
+                    &advice_columns,
+                ))
+            }
+            false => None,
+        };
+
         let base64_config = match arch.base64 {
             true => Some(Base64Chip::configure(
                 meta,
@@ -479,6 +537,7 @@ impl ZkStdLib {
             secp256k1_scalar_config,
             secp256k1_config,
             bls12_381_config,
+            bls12_381_self_config,
             base64_config,
             automaton_config,
         }
@@ -691,6 +750,95 @@ impl ZkStdLib {
         }
 
         panic!("ZkStdArch must enable sha256 (as Table11 or Table16)")
+    }
+
+    /// BLS12-381 curve chip for the verifier.
+    pub fn bls12_381_curve_for_verifier(&self) -> &Bls12381ChipSelf {
+        self.bls12_381_curve_chip_v
+            .as_ref()
+            .expect("ZkStdArch must enable `verifier`")
+    }
+
+    /// KZG-based PLONK partial verifier gadget.
+    pub fn verifier(&self) -> &VerifierGadget<crate::verifier::BlstrsEmulation> {
+        self.verifier_gadget
+            .as_ref()
+            .expect("ZkStdArch must enable `verifier`")
+    }
+
+    /// Assigns a verification key as public input.
+    pub fn verifier_assign_vk_as_public_input(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        name: &str,
+        domain: &EvaluationDomain<F>,
+        cs: &ConstraintSystem<F>,
+        vk_repr: Value<F>,
+    ) -> Result<AssignedVk<crate::verifier::BlstrsEmulation>, Error> {
+        self.verifier()
+            .assign_vk_as_public_input(layouter, name, domain, cs, vk_repr)
+    }
+
+    /// Prepares a proof for verification, returning an accumulator.
+    pub fn verifier_prepare_partial_plonk(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        assigned_vk: &AssignedVk<crate::verifier::BlstrsEmulation>,
+        fixed_bases: &[(
+            &str,
+            <Bls12381ChipSelf as EccInstructions<F, G1Projective>>::Point,
+        )],
+        public_inputs_slices: &[&[AssignedNative<F>]],
+        proof_bytes: Value<Vec<u8>>,
+    ) -> Result<AssignedAccumulator<crate::verifier::BlstrsEmulation>, Error> {
+        self.verifier().prepare(
+            layouter,
+            assigned_vk,
+            fixed_bases,
+            public_inputs_slices,
+            proof_bytes,
+        )
+    }
+
+    /// Accumulates multiple accumulators into a single one.
+    pub fn accumulate(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        accs: &[AssignedAccumulator<crate::verifier::BlstrsEmulation>],
+    ) -> Result<AssignedAccumulator<crate::verifier::BlstrsEmulation>, Error> {
+        let poseidon = self
+            .poseidon_gadget
+            .as_ref()
+            .expect("poseidon must be enabled");
+        AssignedAccumulator::<crate::verifier::BlstrsEmulation>::accumulate(
+            layouter,
+            self.verifier(),
+            &self.native_gadget,
+            poseidon,
+            accs,
+        )
+    }
+
+    /// Effectively realises the accumulation
+    pub fn collapse_accumulator(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        acc: &mut AssignedAccumulator<crate::verifier::BlstrsEmulation>,
+    ) -> Result<(), Error> {
+        acc.collapse(
+            layouter,
+            self.bls12_381_curve_for_verifier(),
+            &self.native_gadget,
+        )
+    }
+
+    /// Constrains the accumulator as a public input.
+    pub fn constrain_accumulator_as_public_input(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        acc: &AssignedAccumulator<crate::verifier::BlstrsEmulation>,
+    ) -> Result<(), Error> {
+        self.verifier().constrain_as_public_input(layouter, acc)
     }
 }
 
