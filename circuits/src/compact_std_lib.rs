@@ -1283,7 +1283,8 @@ pub struct MidnightCircuit<'a, R: Relation> {
     relation: &'a R,
     instance: Value<R::Instance>,
     witness: Value<R::Witness>,
-    nb_public_inputs: Rc<RefCell<Option<usize>>>,
+    /// Number of public inputs, if known.
+    pub nb_public_inputs: Rc<RefCell<Option<usize>>>,
 }
 
 impl<'a, R: Relation> MidnightCircuit<'a, R> {
@@ -1307,7 +1308,8 @@ impl<'a, R: Relation> MidnightCircuit<'a, R> {
 #[derive(Clone, Debug)]
 pub struct MidnightVK {
     architecture: ZkStdLibArch,
-    nb_public_inputs: usize,
+    /// Nb of public inputs
+    pub nb_public_inputs: usize,
     vk: VerifyingKey<midnight_curves::Fq, KZGCommitmentScheme<midnight_curves::Bls12>>,
 }
 
