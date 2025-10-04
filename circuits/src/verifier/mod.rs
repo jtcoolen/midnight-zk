@@ -62,10 +62,14 @@ type VerifyingKey<S> =
 /// fixed-commitments, in the `fixed_base_scalars` field (of its RHS).
 #[derive(Clone, Debug)]
 pub struct AssignedVk<S: SelfEmulation> {
-    vk_name: String,
-    domain: EvaluationDomain<S::F>,
-    cs: ConstraintSystem<S::F>,
-    transcript_repr: AssignedNative<S::F>,
+    /// vk name
+    pub vk_name: String,
+    /// The evaluation domain
+    pub domain: EvaluationDomain<S::F>,
+    /// The constraint system for which this is a verifying key.
+    pub cs: ConstraintSystem<S::F>,
+    /// The in-circuit representation of the vk, as a single group element.
+    pub transcript_repr: AssignedNative<S::F>,
 }
 
 impl<S: SelfEmulation> InnerValue for AssignedVk<S> {
