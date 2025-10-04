@@ -304,8 +304,13 @@ fn main() {
         };
 
         let mut public_inputs = AssignedVk::<S>::as_public_input(&vk);
+        let vk_len = public_inputs.len();
+        println!("vk len: {}", vk_len);
         public_inputs.extend(AssignedNative::<F>::as_public_input(&state));
+        let state_len = public_inputs.len() - vk_len;
+        println!("state len: {}", state_len);
         public_inputs.extend(AssignedAccumulator::as_public_input(&acc));
+        println!("acc len: {}", public_inputs.len() - vk_len - state_len);
 
         let start = Instant::now();
         let proof = {
@@ -327,7 +332,7 @@ fn main() {
             .unwrap_or_else(|_| panic!("Problem creating the {i}-th IVC proof"));
             transcript.finalize()
         };
-        println!("{i}-th IVC proof created in {:?}", start.elapsed());
+        println!("{i}-th IVC proof created in {:?}, with length {}", start.elapsed(), proof.len());
 
         let proof_acc: Accumulator<S> = {
             let mut transcript = CircuitTranscript::<PoseidonState<F>>::init_from_bytes(&proof);

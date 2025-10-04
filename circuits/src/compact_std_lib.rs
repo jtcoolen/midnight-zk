@@ -107,8 +107,10 @@ type Bls12381ChipSelf =
 
 type VS = crate::verifier::BlstrsEmulation;
 type VG = VerifierGadget<VS>;
-type VAcc = AssignedAccumulator<VS>;
-type VKAss = AssignedVk<VS>;
+
+/// Verifier point type
+pub type VerifierPoint =
+    <Bls12381ChipSelf as EccInstructions<F, midnight_curves::G1Projective>>::Point;
 
 /// Size of the lookup table for SHA.
 #[derive(Clone, Copy, Debug, Encode, Decode)]
@@ -827,6 +829,52 @@ impl ZkStdLib {
     ) -> Result<(), Error> {
         self.verifier().constrain_as_public_input(layouter, acc)
     }
+
+    /// Conditionally scale an accumulator by a bit.
+    pub fn accumulator_scale_by_bit(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        bit: &AssignedBit<F>,
+        acc: &mut AssignedAccumulator<VS>,
+    ) -> Result<(), Error> {
+        AssignedAccumulator::<VS>::scale_by_bit(layouter, &self.native_gadget, bit, acc)
+    }
+
+     /// Witness an accumulator (previous IVC accumulator) in-circuit.
+    pub fn verifier_assign_accumulator_from_witness(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        vk_name: &str,
+        cs: &ConstraintSystem<F>,
+        acc_witness: Value<verifier::Accumulator<VS>>,
+    ) -> Result<AssignedAccumulator<VS>, Error> {
+        let mut fixed_base_names = vec![String::from("com_instance")];
+        fixed_base_names.extend(verifier::fixed_base_names::<VS>(
+            vk_name,
+            cs.num_fixed_columns() + cs.num_selectors(),
+            cs.permutation().columns.len(),
+        ));
+        AssignedAccumulator::assign(
+            layouter,
+            self.bls12_381_curve_for_verifier(),
+            &self.native_gadget,
+            1,
+            1,
+            &[],
+            &fixed_base_names,
+            acc_witness.clone(),
+        )
+    }
+
+    /// Identity point on the curve used by the verifier gadget.
+    pub fn verifier_identity_point(
+        &self,
+        layouter: &mut impl Layouter<F>,
+    ) -> Result<VerifierPoint, Error> {
+        self.bls12_381_curve_for_verifier()
+            .assign_fixed(layouter, midnight_curves::G1Projective::identity())
+    }
+
 }
 
 impl Bls12381Chip {
