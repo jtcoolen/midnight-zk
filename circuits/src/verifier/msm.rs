@@ -277,6 +277,71 @@ impl<S: SelfEmulation> Instantiable<S::F> for AssignedMsm<S> {
         .flatten()
         .collect::<Vec<_>>()
     }
+
+    /// Inverse of `as_public_input(msm)`.
+    ///
+    /// Encoding layout (exact inverse of the forward function):
+    ///   [ var_bases (each encoded as `point_pi_len` field limbs) |
+    ///     var_scalars (len = var_len) |
+    ///     fixed_base_scalars (values only; names are not recoverable) ]
+    ///
+    /// - `serialized`: flat vector produced by `AssignedMsm::<S>::as_public_input`.
+    /// - `var_len`   : number of variable bases/scalars.
+    ///
+    /// Returns the inner MSM (`Msm<S>`). If you need to parse two MSMs in a row
+    /// (e.g., for an accumulator), call this on the first slice, then on the tail.
+    fn from_public_input(
+        serialized: Vec<S::F>,
+        len: usize,
+    ) -> <Self as crate::types::InnerValue>::Element {
+        // 1) determine how many field limbs encode a single point
+        let var_len = len;
+        let point_pi_len = 2; // TODO check
+
+        // 2) basic sanity: must at least contain var_bases + var_scalars
+        let min_needed = var_len * point_pi_len + var_len;
+        assert!(
+            serialized.len() >= min_needed,
+            "MSM PI too short: got {}, need at least {} (var_len={}, point_pi_len={})",
+            serialized.len(),
+            min_needed,
+            var_len,
+            point_pi_len
+        );
+
+        let mut i = 0usize;
+
+        // 3) decode variable bases (invert S::AssignedPoint::as_public_input)
+        let mut bases = Vec::with_capacity(var_len);
+        for _ in 0..var_len {
+            let limbs = &serialized[i..i + point_pi_len];
+            i += point_pi_len;
+
+            // You must provide this inverse on your AssignedPoint type.
+            // If you don't have it, implement it next to the forward encoder.
+            let p = <S as SelfEmulation>::AssignedPoint::from_public_input(limbs.to_vec(), 1);
+            bases.push(p);
+        }
+
+        // 4) read scalars
+        let scalars = serialized[i..i + var_len].to_vec();
+        i += var_len;
+
+        // 5) whatever remains are fixed-base scalar values; names are not encoded
+        let fixed_count = serialized.len() - i;
+        let mut fixed_base_scalars = BTreeMap::new();
+        for k in 0..fixed_count {
+            fixed_base_scalars.insert(format!("fixed_{}", k), serialized[i + k]);
+        }
+        i += fixed_count; // (all consumed)
+
+        // 6) build MSM via from_terms, then attach fixed-base scalars
+        let mut msm = Msm::<S>::from_terms(&bases, &scalars);
+        msm.fixed_base_scalars = fixed_base_scalars;
+
+        // Return the inner value (Msm<S>)
+        msm
+    }
 }
 
 impl<S: SelfEmulation> AssignedMsm<S> {

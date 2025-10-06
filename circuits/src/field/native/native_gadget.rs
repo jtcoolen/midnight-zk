@@ -95,6 +95,14 @@ impl<F: PrimeField> Instantiable<F> for AssignedByte<F> {
     fn as_public_input(element: &u8) -> Vec<F> {
         vec![F::from(*element as u64)]
     }
+
+    fn from_public_input(serialized: Vec<F>, _: usize) -> <Self as InnerValue>::Element {
+        assert_eq!(serialized.len(), 1);
+        let bi_v = fe_to_big(serialized[0]);
+        #[cfg(not(test))]
+        assert!(bi_v <= BigUint::from(255u8));
+        bi_v.to_bytes_le().first().copied().unwrap_or(0u8)
+    }
 }
 
 /// This wrapper type on `AssignedNative<F>` is designed to enforce type safety

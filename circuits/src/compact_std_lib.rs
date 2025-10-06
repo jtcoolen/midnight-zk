@@ -853,7 +853,7 @@ impl ZkStdLib {
         AssignedAccumulator::<VS>::scale_by_bit(layouter, &self.native_gadget, bit, acc)
     }
 
-     /// Witness an accumulator (previous IVC accumulator) in-circuit.
+    /// Witness an accumulator (previous IVC accumulator) in-circuit.
     pub fn verifier_assign_accumulator_from_witness(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -887,7 +887,6 @@ impl ZkStdLib {
         self.bls12_381_curve_for_verifier()
             .assign_fixed(layouter, midnight_curves::G1Projective::identity())
     }
-
 }
 
 impl Bls12381Chip {
