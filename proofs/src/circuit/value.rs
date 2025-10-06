@@ -67,7 +67,7 @@ impl<V> Value<V> {
     }
 
     /// ONLY FOR INTERNAL CRATE USAGE; DO NOT EXPOSE!
-    pub(crate) fn into_option(self) -> Option<V> {
+    pub fn into_option(self) -> Option<V> {
         self.inner
     }
 
