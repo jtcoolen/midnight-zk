@@ -44,6 +44,13 @@ where
     fn as_public_input(p: &C) -> Vec<C::Scalar> {
         <C as Hashable<LightPoseidonFS<C::Scalar>>>::to_input(p)
     }
+
+    fn from_public_input(
+        _serialized: Vec<C::Scalar>,
+        _len: usize,
+    ) -> <Self as InnerValue>::Element {
+        unimplemented!("The value of a FakePoint cannot be recovered")
+    }
 }
 
 impl<C: CircuitCurve> InnerValue for FakePoint<C> {

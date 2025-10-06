@@ -188,6 +188,13 @@ impl<S: SelfEmulation> Instantiable<S::F> for AssignedAccumulator<S> {
         .flatten()
         .collect()
     }
+
+    fn from_public_input(serialized: Vec<S::F>, len: usize) -> <Self as InnerValue>::Element {
+        let half = serialized.len() / 2;
+        let lhs = AssignedMsm::from_public_input(serialized[..half].to_vec(), len);
+        let rhs = AssignedMsm::from_public_input(serialized[half..].to_vec(), len);
+        Accumulator { lhs, rhs }
+    }
 }
 
 impl<S: SelfEmulation> AssignedAccumulator<S> {

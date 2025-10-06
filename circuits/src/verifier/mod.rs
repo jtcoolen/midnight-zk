@@ -87,6 +87,10 @@ impl<S: SelfEmulation> Instantiable<S::F> for AssignedVk<S> {
     fn as_public_input(vk: &VerifyingKey<S>) -> Vec<S::F> {
         AssignedNative::<S::F>::as_public_input(&vk.transcript_repr())
     }
+
+    fn from_public_input(_: Vec<S::F>, _: usize) -> <Self as InnerValue>::Element {
+        panic!("It is not possible to get a full verifying key out of an AssignedVk, as the latter does not include fixed commitments.")
+    }
 }
 
 /// Canonical name for the i-th verifying-key commitment.

@@ -92,6 +92,16 @@ impl<C: CircuitCurve> Instantiable<C::Base> for AssignedNativePoint<C> {
         let coordinates = point.coordinates().expect("non-id");
         vec![coordinates.0, coordinates.1]
     }
+
+    fn from_public_input(serialized: Vec<C::Base>, len: usize) -> <Self as InnerValue>::Element {
+        assert_eq!(serialized.len(), len);
+        assert_eq!(len, 2);
+        let x = serialized[0];
+        let y = serialized[1];
+        C::from_xy(x, y)
+            .expect("Valid coordinates.")
+            .into_subgroup()
+    }
 }
 
 impl<C: EdwardsCurve> InnerConstants for AssignedNativePoint<C> {
@@ -126,6 +136,19 @@ impl<C: EdwardsCurve> Instantiable<C::Base> for ScalarVar<C> {
             .chunks(nb_bits_per_batch)
             .map(le_bits_to_field_elem)
             .collect()
+    }
+
+    fn from_public_input(serialized: Vec<C::Base>, len: usize) -> <Self as InnerValue>::Element {
+        let nb_bits_per_batch = C::Base::NUM_BITS as usize - 1;
+        let expected_len = (len + nb_bits_per_batch - 1) / nb_bits_per_batch;
+        assert_eq!(serialized.len(), expected_len);
+        let mut bits = Vec::with_capacity(len);
+        for fe in &serialized {
+            let mut fe_bits = fe_to_le_bits(fe, Some(nb_bits_per_batch));
+            bits.append(&mut fe_bits);
+        }
+        bits.truncate(len);
+        le_bits_to_field_elem::<C::Scalar>(&bits)
     }
 }
 

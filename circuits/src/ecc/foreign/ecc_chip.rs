@@ -200,6 +200,84 @@ where
 
         pis
     }
+
+    fn from_public_input(serialized: Vec<F>, len: usize) -> <Self as InnerValue>::Element {
+        // Helper: integer-compare two field elements via their canonical byte repr.
+        // We compare from the most-significant byte downwards.
+        #[inline]
+        fn ge_by_repr<Fp: PrimeField>(a: &Fp, b: &Fp) -> bool {
+            let ar = a.to_repr();
+            let br = b.to_repr();
+            for (ab, bb) in ar.as_ref().iter().rev().zip(br.as_ref().iter().rev()) {
+                if ab > bb {
+                    return true;
+                } else if ab < bb {
+                    return false;
+                }
+            }
+            true // equal
+        }
+
+        // How many limbs does a single base-field element serialize to?
+        let limbs_per_base = AssignedField::<F, C::Base, B>::as_public_input(&C::Base::ZERO).len();
+        // Per point we serialize all x-limbs plus the first y-limb.
+        let per_point = limbs_per_base + 1;
+
+        assert!(
+            serialized.len() == per_point,
+            "from_public_input: wrong input length (got {}, expected {} for 1 point)",
+            serialized.len(),
+            per_point
+        );
+
+        // B as an element of F (the emulation base = 2^{LOG2_BASE})
+        let emu_base_in_F = F::from(2u64).pow_vartime([B::LOG2_BASE as u64]);
+
+        let start = 0;
+        let end_x = limbs_per_base;
+
+        // Slice for x-limbs and the single y-limb "hint"
+        let mut x_limbs = serialized[start..end_x].to_vec();
+        let y_hint_first_limb = serialized[end_x];
+
+        // The is_identity flag is encoded by adding +B to the first limb of x.
+        let is_id = ge_by_repr(&x_limbs[0], &emu_base_in_F);
+        if is_id {
+            // Remove the injected base to bring the limb back to [0, B)
+            x_limbs[0] -= emu_base_in_F;
+        }
+
+        // Reconstruct x in the curve base field from its limbs.
+        // The AssignedField helper returns a Vec of base-field elements; we asked for exactly one.
+        let x = AssignedField::<F, C::Base, B>::from_public_input(x_limbs, 1);
+
+        if is_id {
+            // Identity is encoded specially; no need to recover y.
+            return C::CryptographicGroup::identity();
+        }
+
+        // Recover y up to sign from the curve equation: y^2 = x^3 + a*x + b
+        let rhs = x * x * x + C::A * x + C::B;
+
+        // sqrt() returns the candidate y; we pick the sign that matches the provided first y-limb.
+        let y_candidate = rhs.sqrt().unwrap(); // panics if x not on curve (invalid input)
+        let y_alt = -y_candidate;
+
+        // Compare the first limb of y to the provided hint to resolve the sign.
+        let y0_first_limb = {
+            let limbs = AssignedField::<F, C::Base, B>::as_public_input(&y_candidate);
+            limbs[0]
+        };
+        let y = if y0_first_limb == y_hint_first_limb {
+            y_candidate
+        } else {
+            y_alt
+        };
+
+        // Build the group point from (x, y).
+        let p = C::from_xy(x, y).expect("from_public_input: (x, y) not on curve");
+        p.into_subgroup()
+    }
 }
 
 impl<F, C, B> InnerValue for AssignedForeignPoint<F, C, B>

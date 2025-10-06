@@ -332,7 +332,11 @@ fn main() {
             .unwrap_or_else(|_| panic!("Problem creating the {i}-th IVC proof"));
             transcript.finalize()
         };
-        println!("{i}-th IVC proof created in {:?}, with length {}", start.elapsed(), proof.len());
+        println!(
+            "{i}-th IVC proof created in {:?}, with length {}",
+            start.elapsed(),
+            proof.len()
+        );
 
         let proof_acc: Accumulator<S> = {
             let mut transcript = CircuitTranscript::<PoseidonState<F>>::init_from_bytes(&proof);

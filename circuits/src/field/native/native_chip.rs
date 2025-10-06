@@ -1041,6 +1041,12 @@ impl<F: PrimeField> Instantiable<F> for AssignedBit<F> {
     fn as_public_input(element: &bool) -> Vec<F> {
         vec![if *element { F::ONE } else { F::ZERO }]
     }
+
+    fn from_public_input(serialized: Vec<F>, _: usize) -> <Self as InnerValue>::Element {
+        assert_eq!(serialized.len(), 1);
+        let b = F::is_zero_vartime(&serialized[0]);
+        !b
+    }
 }
 
 /// This wrapper type on `AssignedNative<F>` is designed to enforce type safety
