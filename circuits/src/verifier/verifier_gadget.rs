@@ -187,7 +187,7 @@ impl<S: SelfEmulation> VerifierGadget<S> {
     ) -> Result<AssignedVk<S>, Error> {
         let transcript_repr: AssignedNative<S::F> = self
             .scalar_chip
-            .assign_as_public_input(layouter, transcript_repr_value)?;
+            .assign(layouter, transcript_repr_value)?;
 
         // We expect a finalized cs with no selectors, i.e. whose selectors have been
         // converted into fixed columns.
