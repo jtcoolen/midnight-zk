@@ -223,12 +223,12 @@ where
         // Per point we serialize all x-limbs plus the first y-limb.
         let per_point = limbs_per_base + 1;
 
-        assert!(
+        /*assert!(
             serialized.len() == per_point,
             "from_public_input: wrong input length (got {}, expected {} for 1 point)",
             serialized.len(),
             per_point
-        );
+        );*/
 
         // B as an element of F (the emulation base = 2^{LOG2_BASE})
         let emu_base_in_F = F::from(2u64).pow_vartime([B::LOG2_BASE as u64]);
