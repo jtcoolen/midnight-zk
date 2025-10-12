@@ -467,8 +467,12 @@ impl ZkStdLib {
             ),
         );
 
-        let pow2range_config =
-            Pow2RangeChip::configure(meta, &advice_columns[1..=arch.nr_pow2range_cols as usize]);
+        // Match the IVC example when applicable; otherwise keep the original behavior.
+        let pow2range_config = if use_ivc_layout {
+            Pow2RangeChip::configure(meta, &advice_columns[1..NB_ARITH_COLS])
+        } else {
+            Pow2RangeChip::configure(meta, &advice_columns[1..=arch.nr_pow2range_cols as usize])
+        };
 
         let core_decomposition_config =
             P2RDecompositionChip::configure(meta, &(native_config.clone(), pow2range_config));
