@@ -185,9 +185,8 @@ impl<S: SelfEmulation> VerifierGadget<S> {
         cs: &ConstraintSystem<S::F>,
         transcript_repr_value: Value<S::F>,
     ) -> Result<AssignedVk<S>, Error> {
-        let transcript_repr: AssignedNative<S::F> = self
-            .scalar_chip
-            .assign(layouter, transcript_repr_value)?;
+        let transcript_repr: AssignedNative<S::F> =
+            self.scalar_chip.assign(layouter, transcript_repr_value)?;
 
         // We expect a finalized cs with no selectors, i.e. whose selectors have been
         // converted into fixed columns.

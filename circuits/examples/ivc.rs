@@ -315,7 +315,10 @@ fn main() {
         public_inputs.extend(AssignedAccumulator::as_public_input(&acc));
         println!("acc len: {}", public_inputs.len() - vk_len - state_len);
 
-        for (i, v) in AssignedAccumulator::as_public_input(&acc).iter().enumerate() {
+        for (i, v) in AssignedAccumulator::as_public_input(&acc)
+            .iter()
+            .enumerate()
+        {
             println!("acc[{}] = {}", i, v);
         }
 

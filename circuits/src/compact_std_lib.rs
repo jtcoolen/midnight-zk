@@ -335,86 +335,126 @@ impl ZkStdLib {
 
     /// Configure [ZkStdLib] from scratch.
     pub fn configure(meta: &mut ConstraintSystem<F>, arch: ZkStdLibArch) -> ZkStdLibConfig {
-        let nb_advice_cols = [
-            NB_ARITH_COLS,
-            arch.nr_pow2range_cols as usize,
-            if arch.jubjub { NB_EDWARDS_COLS } else { 0 },
-            if arch.poseidon {
-                NB_POSEIDON_ADVICE_COLS
-            } else {
-                0
-            },
-            match arch.sha256 {
-                Some(ShaTableSize::Table11) => NB_TABLE11_ADVICE_COLS,
-                Some(ShaTableSize::Table16) => 0, // Table16 advice cols are not shareable
-                None => 0,
-            },
-            if arch.secp256k1 {
-                max(
-                    nb_field_chip_columns::<F, secp256k1::Fq, MEP>(),
-                    nb_foreign_ecc_chip_columns::<F, Secp256k1, MEP, secp256k1::Fq>(),
-                )
-            } else {
-                0
-            },
-            if arch.bls12_381 {
-                max(
-                    nb_field_chip_columns::<F, midnight_curves::Fp, MEP>(),
+        // If the only special feature is the in-circuit verifier, use the exact
+        // IVC-like layout from the example (no extra columns).
+        let use_ivc_layout = arch.verifier
+            && !arch.jubjub
+            && arch.sha256.is_none()
+            && !arch.secp256k1
+            && !arch.bls12_381
+            && !arch.base64
+            && !arch.automaton;
+
+        let (advice_columns, fixed_columns) = if use_ivc_layout {
+            // IVC example: advice = nb_foreign_ecc_chip_columns::<F, C, C, NG>()
+            // We defensively max with NB_ARITH_COLS and NB_POSEIDON_ADVICE_COLS,
+            // though in practice the foreign-ecc requirement already dominates.
+            let nb_advice_cols = nb_foreign_ecc_chip_columns::<
+                F,
+                midnight_curves::G1Projective,
+                midnight_curves::G1Projective,
+                NG,
+            >()
+            .max(NB_ARITH_COLS)
+            .max(NB_POSEIDON_ADVICE_COLS);
+            // IVC example uses NB_ARITH_COLS + 4 fixed cols; that equals NB_ARITH_FIXED_COLS.
+            let nb_fixed_cols = NB_ARITH_FIXED_COLS.max(NB_POSEIDON_FIXED_COLS);
+
+            (
+                (0..nb_advice_cols)
+                    .map(|_| meta.advice_column())
+                    .collect::<Vec<_>>(),
+                (0..nb_fixed_cols)
+                    .map(|_| meta.fixed_column())
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            let nb_advice_cols = [
+                NB_ARITH_COLS,
+                arch.nr_pow2range_cols as usize,
+                if arch.jubjub { NB_EDWARDS_COLS } else { 0 },
+                if arch.poseidon {
+                    NB_POSEIDON_ADVICE_COLS
+                } else {
+                    0
+                },
+                match arch.sha256 {
+                    Some(ShaTableSize::Table11) => NB_TABLE11_ADVICE_COLS,
+                    Some(ShaTableSize::Table16) => 0, // Table16 advice cols are not shareable
+                    None => 0,
+                },
+                if arch.secp256k1 {
+                    max(
+                        nb_field_chip_columns::<F, secp256k1::Fq, MEP>(),
+                        nb_foreign_ecc_chip_columns::<F, Secp256k1, MEP, secp256k1::Fq>(),
+                    )
+                } else {
+                    0
+                },
+                if arch.bls12_381 {
+                    max(
+                        nb_field_chip_columns::<F, midnight_curves::Fp, MEP>(),
+                        nb_foreign_ecc_chip_columns::<
+                            F,
+                            midnight_curves::G1Projective,
+                            MEP,
+                            midnight_curves::Fp,
+                        >(),
+                    )
+                } else {
+                    0
+                },
+                if arch.base64 {
+                    NB_BASE64_ADVICE_COLS
+                } else {
+                    0
+                },
+                // FIX: only reserve automaton cols if automaton is enabled.
+                if arch.automaton { NB_AUTOMATA_COLS } else { 0 },
+                if arch.verifier {
                     nb_foreign_ecc_chip_columns::<
                         F,
                         midnight_curves::G1Projective,
-                        MEP,
-                        midnight_curves::Fp,
-                    >(),
-                )
-            } else {
-                0
-            },
-            if arch.base64 {
-                NB_BASE64_ADVICE_COLS
-            } else {
-                0
-            },
-            NB_AUTOMATA_COLS,
-            if arch.verifier {
-                // mirrors the <GADGETS> example: nb_foreign_ecc_chip_columns::<F, C, C, NG>()
-                nb_foreign_ecc_chip_columns::<
-                    F,
-                    midnight_curves::G1Projective,
-                    midnight_curves::G1Projective,
-                    NG,
-                >()
-            } else {
-                0
-            },
-        ]
-        .into_iter()
-        .max()
-        .unwrap_or(0);
+                        midnight_curves::G1Projective,
+                        NG,
+                    >()
+                } else {
+                    0
+                },
+            ]
+            .into_iter()
+            .max()
+            .unwrap_or(0);
 
-        let nb_fixed_cols = [
-            NB_ARITH_FIXED_COLS,
-            if arch.poseidon {
-                NB_POSEIDON_FIXED_COLS
-            } else {
-                0
-            },
-            match arch.sha256 {
-                Some(ShaTableSize::Table11) => NB_TABLE11_FIXED_COLS,
-                Some(ShaTableSize::Table16) => 0, // Table16 fixed cols are not shareable
-                None => 0,
-            },
-        ]
-        .into_iter()
-        .max()
-        .unwrap_or(0);
+            let nb_fixed_cols = [
+                NB_ARITH_FIXED_COLS,
+                if arch.poseidon {
+                    NB_POSEIDON_FIXED_COLS
+                } else {
+                    0
+                },
+                match arch.sha256 {
+                    Some(ShaTableSize::Table11) => NB_TABLE11_FIXED_COLS,
+                    Some(ShaTableSize::Table16) => 0, // Table16 fixed cols are not shareable
+                    None => 0,
+                },
+            ]
+            .into_iter()
+            .max()
+            .unwrap_or(0);
 
-        let advice_columns = (0..nb_advice_cols)
-            .map(|_| meta.advice_column())
-            .collect::<Vec<_>>();
-        let fixed_columns = (0..nb_fixed_cols)
-            .map(|_| meta.fixed_column())
-            .collect::<Vec<_>>();
+            (
+                (0..nb_advice_cols)
+                    .map(|_| meta.advice_column())
+                    .collect::<Vec<_>>(),
+                (0..nb_fixed_cols)
+                    .map(|_| meta.fixed_column())
+                    .collect::<Vec<_>>(),
+            )
+        };
+
+        // Two instance columns: committed PI + raw PI.
+
         let committed_instance_column = meta.instance_column();
         let instance_column = meta.instance_column();
 
