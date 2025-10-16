@@ -488,16 +488,6 @@ impl ZkStdLib {
             (nb_advice_cols, nb_fixed_cols)
         };
 
-        let nb_fixed_cols = [
-            NB_ARITH_FIXED_COLS,
-            arch.poseidon as usize * NB_POSEIDON_FIXED_COLS,
-            arch.sha256 as usize * NB_SHA256_FIXED_COLS,
-            arch.sha512 as usize * NB_SHA512_FIXED_COLS,
-        ]
-        .into_iter()
-        .max()
-        .unwrap_or(0);
-
         let advice_columns = (0..nb_advice_cols).map(|_| meta.advice_column()).collect::<Vec<_>>();
         let fixed_columns = (0..nb_fixed_cols).map(|_| meta.fixed_column()).collect::<Vec<_>>();
         let committed_instance_column = meta.instance_column();
