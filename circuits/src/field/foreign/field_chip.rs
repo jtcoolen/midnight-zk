@@ -136,10 +136,7 @@ where
 
     fn from_public_input(serialized: Vec<F>, _: usize) -> <Self as InnerValue>::Element {
         let base = BI::from(2).pow(P::LOG2_BASE);
-        let limbs = serialized
-            .iter()
-            .map(|x| fe_to_bigint::<F>(x))
-            .collect::<Vec<_>>();
+        let limbs = serialized.iter().map(|x| fe_to_bigint::<F>(x)).collect::<Vec<_>>();
         let bi = BI::one() + bi_from_limbs(&base, &limbs);
         let k_modulus = modulus::<K>().to_bigint().unwrap();
         let bi = bi.mod_floor(&k_modulus);

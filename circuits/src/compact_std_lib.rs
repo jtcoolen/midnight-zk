@@ -379,45 +379,114 @@ impl ZkStdLib {
 
     /// Configure [ZkStdLib] from scratch.
     pub fn configure(meta: &mut ConstraintSystem<F>, arch: ZkStdLibArch) -> ZkStdLibConfig {
-        let nb_advice_cols = [
-            NB_ARITH_COLS,
-            arch.nr_pow2range_cols as usize,
-            arch.jubjub as usize * NB_EDWARDS_COLS,
-            arch.poseidon as usize * NB_POSEIDON_ADVICE_COLS,
-            arch.sha256 as usize * NB_SHA256_ADVICE_COLS,
-            arch.sha512 as usize * NB_SHA512_ADVICE_COLS,
-            arch.secp256k1 as usize
-                * max(
-                    nb_field_chip_columns::<F, secp256k1::Fq, MEP>(),
-                    nb_foreign_ecc_chip_columns::<F, Secp256k1, MEP, secp256k1::Fq>(),
-                ),
-            arch.bls12_381 as usize
-                * max(
-                    nb_field_chip_columns::<F, midnight_curves::Fp, MEP>(),
+        // Decide whether to use the IVC-only layout (no extra gadgets).
+        let use_ivc_layout = arch.verifier
+            && !arch.jubjub
+            && !arch.sha256
+            && !arch.sha512
+            && !arch.secp256k1
+            && !arch.bls12_381
+            && !arch.base64
+            && !arch.automaton;
+
+        let (nb_advice_cols, nb_fixed_cols) = if use_ivc_layout {
+            // IVC example: advice = nb_foreign_ecc_chip_columns::<F, C, C, NG>()
+            // Defensively max with arithmetic/poseidon advice needs.
+            let nb_advice_cols = nb_foreign_ecc_chip_columns::<
+                F,
+                midnight_curves::G1Projective,
+                midnight_curves::G1Projective,
+                NG,
+            >()
+            .max(NB_ARITH_COLS)
+            .max(NB_POSEIDON_ADVICE_COLS);
+
+            // IVC example uses NB_ARITH_COLS + 4 fixed cols; equals NB_ARITH_FIXED_COLS.
+            // Also guard with poseidon fixed in case it’s required by your build.
+            let nb_fixed_cols = NB_ARITH_FIXED_COLS.max(NB_POSEIDON_FIXED_COLS);
+
+            (nb_advice_cols, nb_fixed_cols)
+        } else {
+            // General case: take the maximum needed across enabled gadgets.
+            let nb_advice_cols = [
+                NB_ARITH_COLS,
+                arch.nr_pow2range_cols as usize,
+                if arch.jubjub { NB_EDWARDS_COLS } else { 0 },
+                if arch.poseidon {
+                    NB_POSEIDON_ADVICE_COLS
+                } else {
+                    0
+                },
+                if arch.sha256 {
+                    NB_SHA256_ADVICE_COLS
+                } else {
+                    0
+                },
+                if arch.sha512 {
+                    NB_SHA512_ADVICE_COLS
+                } else {
+                    0
+                },
+                if arch.secp256k1 {
+                    core::cmp::max(
+                        nb_field_chip_columns::<F, secp256k1::Fq, MEP>(),
+                        nb_foreign_ecc_chip_columns::<F, Secp256k1, MEP, secp256k1::Fq>(),
+                    )
+                } else {
+                    0
+                },
+                if arch.bls12_381 {
+                    core::cmp::max(
+                        nb_field_chip_columns::<F, midnight_curves::Fp, MEP>(),
+                        nb_foreign_ecc_chip_columns::<
+                            F,
+                            midnight_curves::G1Projective,
+                            MEP,
+                            midnight_curves::Fp,
+                        >(),
+                    )
+                } else {
+                    0
+                },
+                if arch.base64 {
+                    NB_BASE64_ADVICE_COLS
+                } else {
+                    0
+                },
+                // Reserve automaton columns only if the automaton is enabled.
+                if arch.automaton { NB_AUTOMATA_COLS } else { 0 },
+                // Verifier requires foreign-ecc columns in the example layout.
+                if arch.verifier {
                     nb_foreign_ecc_chip_columns::<
                         F,
                         midnight_curves::G1Projective,
-                        MEP,
-                        midnight_curves::Fp,
-                    >(),
-                ),
-            arch.base64 as usize * NB_BASE64_ADVICE_COLS,
-            NB_AUTOMATA_COLS,
-            if arch.verifier {
-                // mirrors the <GADGETS> example: nb_foreign_ecc_chip_columns::<F, C, C, NG>()
-                nb_foreign_ecc_chip_columns::<
-                    F,
-                    midnight_curves::G1Projective,
-                    midnight_curves::G1Projective,
-                    NG,
-                >()
-            } else {
-                0
-            },
-        ]
-        .into_iter()
-        .max()
-        .unwrap_or(0);
+                        midnight_curves::G1Projective,
+                        NG,
+                    >()
+                } else {
+                    0
+                },
+            ]
+            .into_iter()
+            .max()
+            .unwrap_or(0);
+
+            let nb_fixed_cols = [
+                NB_ARITH_FIXED_COLS,
+                if arch.poseidon {
+                    NB_POSEIDON_FIXED_COLS
+                } else {
+                    0
+                },
+                if arch.sha256 { NB_SHA256_FIXED_COLS } else { 0 },
+                if arch.sha512 { NB_SHA512_FIXED_COLS } else { 0 },
+            ]
+            .into_iter()
+            .max()
+            .unwrap_or(0);
+
+            (nb_advice_cols, nb_fixed_cols)
+        };
 
         let nb_fixed_cols = [
             NB_ARITH_FIXED_COLS,

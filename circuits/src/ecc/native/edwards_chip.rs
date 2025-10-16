@@ -98,9 +98,7 @@ impl<C: CircuitCurve> Instantiable<C::Base> for AssignedNativePoint<C> {
         assert_eq!(len, 2);
         let x = serialized[0];
         let y = serialized[1];
-        C::from_xy(x, y)
-            .expect("Valid coordinates.")
-            .into_subgroup()
+        C::from_xy(x, y).expect("Valid coordinates.").into_subgroup()
     }
 }
 
