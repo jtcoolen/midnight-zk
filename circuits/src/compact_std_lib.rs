@@ -1875,7 +1875,7 @@ where
     F: Hashable<H> + Sampleable<H>,
 {
     let pi = R::format_instance(instance);
-    let com_inst = R::format_committed_instances(&witness);
+    //let com_inst = R::format_committed_instances(&witness);
     let circuit = MidnightCircuit::new(
         relation,
         Value::known(instance.clone()),
@@ -1887,7 +1887,7 @@ where
         &pk.pk,
         &circuit,
         1,
-        &[com_inst.as_slice(), &pi],
+        &[&[], &pi],
         rng,
         #[cfg(feature = "bench-internal")]
         _group,
